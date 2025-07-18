@@ -23,6 +23,20 @@ from .base import BaseLLM, LLMConfig
 
 logger = get_logger(__name__)
 
+
+def create_cache_table(conn):
+    c = conn.cursor()
+    # if the table does not exist, create it
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS cache (
+            key TEXT PRIMARY KEY,
+            message TEXT,
+            metadata TEXT
+        )
+    """)
+    conn.commit()
+
+
 def cache_response(func):
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
@@ -30,25 +44,12 @@ def cache_response(func):
         if args:
             messages = args[0]
         else:
-            messages = kwargs.get("messages")
+            messages = kwargs.pop("messages")
         if messages is None:
             raise ValueError("Missing required 'messages' parameter for caching.")
 
         # get model, seed and temperature from kwargs or self.llm_config.generate_params
-        gen_params = getattr(self, "llm_config", {}).generate_params if hasattr(self, "llm_config") else {}
-        model = kwargs.get("model", gen_params.get("model"))
-        seed = kwargs.get("seed", gen_params.get("seed"))
-        temperature = kwargs.get("temperature", gen_params.get("temperature"))
-
-        # build key data, convert to JSON string and hash to generate key_hash
-        key_data = {
-            "messages": messages,  # messages requires JSON serializable
-            "model": model,
-            "seed": seed,
-            "temperature": temperature,
-        }
-        key_str = json.dumps(key_data, sort_keys=True, default=str)
-        key_hash = hashlib.sha256(key_str.encode("utf-8")).hexdigest()
+        key_hash = self.gen_cache_key_hash(messages, **kwargs)
 
         # the file name of lock, ensure mutual exclusion when accessing concurrently
         lock_file = self.cache_file_name + ".lock"
@@ -56,16 +57,8 @@ def cache_response(func):
         # Try to read from SQLite cache
         with FileLock(lock_file):
             conn = sqlite3.connect(self.cache_file_name)
+            create_cache_table(conn)
             c = conn.cursor()
-            # if the table does not exist, create it
-            c.execute("""
-                CREATE TABLE IF NOT EXISTS cache (
-                    key TEXT PRIMARY KEY,
-                    message TEXT,
-                    metadata TEXT
-                )
-            """)
-            conn.commit()  # commit to save the table creation
             c.execute("SELECT message, metadata FROM cache WHERE key = ?", (key_hash,))
             row = c.fetchone()
             conn.close()
@@ -76,22 +69,16 @@ def cache_response(func):
                 return message, metadata, True
 
         # if cache miss, call the original function to get the result
-        result = func(self, *args, **kwargs)
+        result = func(self, messages, **kwargs)
         message, metadata = result
 
         # insert new result into cache
         with FileLock(lock_file):
             conn = sqlite3.connect(self.cache_file_name)
-            c = conn.cursor()
             # make sure the table exists again (if it doesn't exist, it would be created)
-            c.execute("""
-                CREATE TABLE IF NOT EXISTS cache (
-                    key TEXT PRIMARY KEY,
-                    message TEXT,
-                    metadata TEXT
-                )
-            """)
+            create_cache_table(conn)
             metadata_str = json.dumps(metadata)
+            c = conn.cursor()
             c.execute("INSERT OR REPLACE INTO cache (key, message, metadata) VALUES (?, ?, ?)",
                       (key_hash, message, metadata_str))
             conn.commit()
@@ -177,23 +164,61 @@ class CacheOpenAI(BaseLLM):
         if kwargs:
             params.update(kwargs)
         params["messages"] = messages
+        params["extra_body"] = {"enable_thinking": True}
         logger.debug(f"Calling OpenAI GPT API with:\n{params}")
 
         if 'gpt' not in params['model'] or version.parse(openai.__version__) < version.parse("1.45.0"): # if we use vllm to call openai api or if we use openai but the version is too old to use 'max_completion_tokens' argument
             # TODO strange version change in openai protocol, but our current vllm version not changed yet
             params['max_tokens'] = params.pop('max_completion_tokens')
 
+        params["stream"] = True
         response = self.openai_client.chat.completions.create(**params)
 
-        response_message = response.choices[0].message.content
+        if params["stream"]:
+            response_message = ""
+            for chunk in response:
+                c = chunk.choices[0].delta.content
+                if c is not None:
+                    response_message += c
+                    # print(c, end="")
+            metadata = {
+                "prompt_tokens": 0,
+                "completion_tokens": 0,
+                "finish_reason": None,
+            }
+        else:
+            response_message = response.choices[0].message.content
+            metadata = {
+                "prompt_tokens": response.usage.prompt_tokens,
+                "completion_tokens": response.usage.completion_tokens,
+                "finish_reason": response.choices[0].finish_reason,
+            }
         assert isinstance(response_message, str), "response_message should be a string"
-        
-        metadata = {
-            "prompt_tokens": response.usage.prompt_tokens, 
-            "completion_tokens": response.usage.completion_tokens,
-            "finish_reason": response.choices[0].finish_reason,
-        }
 
         return response_message, metadata
 
+    def gen_cache_key_hash(self, messages, **kwargs):
+        base_gen_params = getattr(self, "llm_config", {}).generate_params if hasattr(self, "llm_config") else {}
+        model = kwargs.get("model", base_gen_params.get("model"))
+        seed = kwargs.get("seed", base_gen_params.get("seed"))
+        temperature = kwargs.get("temperature", base_gen_params.get("temperature"))
 
+        # build key data, convert to JSON string and hash to generate key_hash
+        key_data = {
+            "messages": messages,  # messages requires JSON serializable
+            "model": model,
+            "seed": seed,
+            "temperature": temperature,
+        }
+        key_str = json.dumps(key_data, sort_keys=True, default=str)
+        return hashlib.sha256(key_str.encode("utf-8")).hexdigest()
+
+    def del_cache(self, key_hash):
+        lock_file = self.cache_file_name + ".lock"
+        with FileLock(lock_file):
+            conn = sqlite3.connect(self.cache_file_name)
+            create_cache_table(conn)
+            c = conn.cursor()
+            c.execute("DELETE FROM cache WHERE key = ?", (key_hash,))
+            conn.commit()
+            conn.close()

@@ -1,5 +1,8 @@
 import json
 import difflib
+from abc import ABC, abstractmethod
+
+import requests
 from pydantic import BaseModel, Field, TypeAdapter
 from openai import OpenAI
 from copy import deepcopy
@@ -12,7 +15,18 @@ class Fact(BaseModel):
     fact: list[list[str]] = Field(description="A list of facts, each fact is a list of 3 strings: [subject, predicate, object]")
 
 
-class DSPyFilter:
+class Reranker(ABC):
+
+    @abstractmethod
+    def rerank(self,
+               query: str,
+               candidate_items: List[Tuple],
+               candidate_indices: List[int],
+               len_after_rerank: int = None) -> Tuple[List[int], List[Tuple], dict]:
+        raise NotImplementedError
+
+
+class DSPyFilter(Reranker):
     def __init__(self, hipporag):
         """
         Initializes the object with the necessary configurations and templates for processing input and output messages.
@@ -129,3 +143,38 @@ class DSPyFilter:
         sorted_candidate_indices = [candidate_indices[i] for i in result_indices]
         sorted_candidate_items = [candidate_items[i] for i in result_indices]
         return sorted_candidate_indices[:len_after_rerank], sorted_candidate_items[:len_after_rerank], {'confidence': None}
+
+
+class VectorReranker(Reranker):
+
+    def __init__(self, hipporag):
+        self.embedding_base_url = hipporag.global_config.embedding_base_url
+        self.model = hipporag.global_config.embedding_model_name
+        self.top_k = hipporag.global_config.linking_top_k
+
+    def __call__(self, *args, **kwargs):
+        return self.rerank(*args, **kwargs)
+
+    def rerank(self, query: str, candidate_items: List[Tuple], candidate_indices: List[int],
+               len_after_rerank: int = None) -> Tuple[List[int], List[Tuple], dict]:
+        docs = []
+        item_map = {}
+        for d in candidate_items:
+            doc = f'{d[0]} {d[1]} {d[2]}'
+            docs.append(doc)
+            item_map[doc] = d
+
+        data = {
+            "model": self.model,
+            "query": query,
+            "documents": docs,
+            "top_n": len_after_rerank if len_after_rerank else self.top_k,
+            "max_length": 512,
+            "batch_size": 64
+        }
+        url = f"{self.embedding_base_url}/rerank"
+        res = requests.post(url, json=data).json()
+        if "results" not in res:
+            raise Exception(f"Invalid response: {res}")
+
+        return [], [item_map[r['document']['text']] for r in res['results']], {'confidence': None}

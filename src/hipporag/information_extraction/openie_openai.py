@@ -3,6 +3,8 @@ import re
 from dataclasses import dataclass
 from typing import Dict, Any, List, TypedDict, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
+
+from pydantic import BaseModel
 from tqdm import tqdm
 
 from ..prompts import PromptTemplateManager
@@ -27,105 +29,135 @@ class LLMInput:
     input_message: List[Dict]
 
 
-def _extract_ner_from_response(real_response):
+class NERExtract(BaseModel):
+    named_entities: List[str]
+
+
+class TripleExtract(BaseModel):
+    triples: List[List[str]]
+
+
+def clear_char(text: str) -> str:
+    text = re.sub(r'[\x00-\x1F\x7F]', '', text)
+    text = re.sub(r'\\(?!u)', '', text)
+    text = text.strip()
+    return text
+
+
+def _extract_ner_from_response(real_response) -> List[str]:
     pattern = r'\{[^{}]*"named_entities"\s*:\s*\[[^\]]*\][^{}]*\}'
-    match = re.search(pattern, real_response, re.DOTALL)
+    response = clear_char(real_response)
+    match = re.search(pattern, response, re.DOTALL)
     if match is None:
         # If pattern doesn't match, return an empty list
         return []
-    return eval(match.group())["named_entities"]
+    return NERExtract.model_validate_json(match.group()).named_entities
+
+
+def _extract_triples_from_response(real_response):
+    pattern = r'\{[^{}]*"triples"\s*:\s*\[[^\]]*\][^{}]*\}'
+    response = clear_char(real_response)
+    match = re.search(pattern, response, re.DOTALL)
+    if match is None:
+        # If pattern doesn't match, return an empty list
+        return []
+    # return eval(match.group())["triples"]
+    return TripleExtract.model_validate_json(match.group()).triples
+
 
 
 class OpenIE:
-    def __init__(self, llm_model: CacheOpenAI):
+    def __init__(self, llm_model: CacheOpenAI, max_workers: int):
         # Init prompt template manager
         self.prompt_template_manager = PromptTemplateManager(role_mapping={"system": "system", "user": "user", "assistant": "assistant"})
         self.llm_model = llm_model
+        self.max_workers = max_workers
 
     def ner(self, chunk_key: str, passage: str) -> NerRawOutput:
         # PREPROCESSING
         ner_input_message = self.prompt_template_manager.render(name='ner', passage=passage)
+        if self.llm_model.llm_name.lower().startswith('qwen3'):
+            ner_input_message[-1]['content'] = "/no_think" + ner_input_message[-1]['content']
         raw_response = ""
         metadata = {}
-        try:
-            # LLM INFERENCE
-            raw_response, metadata, cache_hit = self.llm_model.infer(
-                messages=ner_input_message,
-            )
-            metadata['cache_hit'] = cache_hit
-            if metadata['finish_reason'] == 'length':
-                real_response = fix_broken_generated_json(raw_response)
-            else:
-                real_response = raw_response
-            extracted_entities = _extract_ner_from_response(real_response)
-            unique_entities = list(dict.fromkeys(extracted_entities))
-
-        except Exception as e:
-            # For any other unexpected exceptions, log them and return with the error message
-            logger.warning(e)
-            metadata.update({'error': str(e)})
-            return NerRawOutput(
-                chunk_id=chunk_key,
-                response=raw_response,  # Store the error message in metadata
-                unique_entities=[],
-                metadata=metadata  # Store the error message in metadata
-            )
-
-        return NerRawOutput(
-            chunk_id=chunk_key,
-            response=raw_response,
-            unique_entities=unique_entities,
-            metadata=metadata
-        )
+        result = None
+        for _ in range(3):
+            try:
+                # LLM INFERENCE
+                raw_response, metadata, cache_hit = self.llm_model.infer(messages=ner_input_message)
+                metadata['cache_hit'] = cache_hit
+                if metadata['finish_reason'] == 'length':
+                    real_response = fix_broken_generated_json(raw_response)
+                else:
+                    real_response = raw_response
+                extracted_entities = _extract_ner_from_response(real_response)
+                unique_entities = list(dict.fromkeys(extracted_entities))
+                result = NerRawOutput(
+                    chunk_id=chunk_key,
+                    response=raw_response,
+                    unique_entities=unique_entities,
+                    metadata=metadata
+                )
+                break
+            except Exception as e:
+                # For any other unexpected exceptions, log them and return with the error message
+                logger.warning(f"Exception for ner extract chunk {chunk_key}, response: {raw_response}, error: {e}")
+                metadata.update({'error': str(e)})
+                result = NerRawOutput(
+                    chunk_id=chunk_key,
+                    response=raw_response,  # Store the error message in metadata
+                    unique_entities=[],
+                    metadata=metadata  # Store the error message in metadata
+                )
+                self.llm_model.del_cache(self.llm_model.gen_cache_key_hash(ner_input_message))
+        return result
 
     def triple_extraction(self, chunk_key: str, passage: str, named_entities: List[str]) -> TripleRawOutput:
-        def _extract_triples_from_response(real_response):
-            pattern = r'\{[^{}]*"triples"\s*:\s*\[[^\]]*\][^{}]*\}'
-            match = re.search(pattern, real_response, re.DOTALL)
-            if match is None:
-                # If pattern doesn't match, return an empty list
-                return []
-            return eval(match.group())["triples"]
-
         # PREPROCESSING
         messages = self.prompt_template_manager.render(
             name='triple_extraction',
             passage=passage,
             named_entity_json=json.dumps({"named_entities": named_entities})
         )
+        if self.llm_model.llm_name.lower().startswith('qwen3'):
+            messages[-1]['content'] = "/no_think" + messages[-1]['content']
 
         raw_response = ""
         metadata = {}
-        try:
-            # LLM INFERENCE
-            raw_response, metadata, cache_hit = self.llm_model.infer(
-                messages=messages,
-            )
-            metadata['cache_hit'] = cache_hit
-            if metadata['finish_reason'] == 'length':
-                real_response = fix_broken_generated_json(raw_response)
-            else:
-                real_response = raw_response
-            extracted_triples = _extract_triples_from_response(real_response)
-            triplets = filter_invalid_triples(triples=extracted_triples)
-
-        except Exception as e:
-            logger.warning(f"Exception for chunk {chunk_key}: {e}")
-            metadata.update({'error': str(e)})
-            return TripleRawOutput(
-                chunk_id=chunk_key,
-                response=raw_response,
-                metadata=metadata,
-                triples=[]
-            )
+        result = None
+        temperature = 0.7
+        for _ in range(3):
+            try:
+                # LLM INFERENCE
+                raw_response, metadata, cache_hit = self.llm_model.infer(messages=messages, temperature=temperature)
+                metadata['cache_hit'] = cache_hit
+                if metadata['finish_reason'] == 'length':
+                    real_response = fix_broken_generated_json(raw_response)
+                else:
+                    real_response = raw_response
+                extracted_triples = _extract_triples_from_response(real_response)
+                triplets = filter_invalid_triples(triples=extracted_triples)
+                result = TripleRawOutput(
+                    chunk_id=chunk_key,
+                    response=raw_response,
+                    metadata=metadata,
+                    triples=triplets
+                )
+                break
+            except Exception as e:
+                logger.warning(f"Exception for triple extract chunk {chunk_key}, response: {raw_response}, error: {e}")
+                metadata.update({'error': str(e)})
+                result = TripleRawOutput(
+                    chunk_id=chunk_key,
+                    response=raw_response,
+                    metadata=metadata,
+                    triples=[]
+                )
+                self.llm_model.del_cache(self.llm_model.gen_cache_key_hash(messages))
+                temperature += 0.1
 
         # Success
-        return TripleRawOutput(
-            chunk_id=chunk_key,
-            response=raw_response,
-            metadata=metadata,
-            triples=triplets
-        )
+        return result
 
     def openie(self, chunk_key: str, passage: str) -> Dict[str, Any]:
         ner_output = self.ner(chunk_key=chunk_key, passage=passage)
@@ -146,6 +178,8 @@ class OpenIE:
                 - A dict with keys as the chunk ids and values as the triple extraction result instances.
         """
 
+        logger.info(f"Running OpenIE on {len(chunks)} chunks, max workers: {self.max_workers}")
+
         # Extract passages from the provided chunks
         chunk_passages = {chunk_key: chunk["content"] for chunk_key, chunk in chunks.items()}
 
@@ -154,7 +188,7 @@ class OpenIE:
         total_completion_tokens = 0
         num_cache_hit = 0
 
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # Create NER futures for each chunk
             ner_futures = {
                 executor.submit(self.ner, chunk_key, passage): chunk_key
@@ -167,6 +201,8 @@ class OpenIE:
                 ner_results_list.append(result)
                 # Update metrics based on the metadata from the result
                 metadata = result.metadata
+                if metadata.get('error'):
+                    raise Exception(f"Error in NER: {metadata.get('error')}")
                 total_prompt_tokens += metadata.get('prompt_tokens', 0)
                 total_completion_tokens += metadata.get('completion_tokens', 0)
                 if metadata.get('cache_hit'):
@@ -180,7 +216,7 @@ class OpenIE:
 
         triple_results_list = []
         total_prompt_tokens, total_completion_tokens, num_cache_hit = 0, 0, 0
-        with ThreadPoolExecutor() as executor:
+        with ThreadPoolExecutor(max_workers=self.max_workers) as executor:
             # Create triple extraction futures for each chunk
             re_futures = {
                 executor.submit(self.triple_extraction, ner_result.chunk_id,
@@ -194,6 +230,8 @@ class OpenIE:
                 result = future.result()
                 triple_results_list.append(result)
                 metadata = result.metadata
+                if metadata.get('error'):
+                    raise Exception(f"Error in triple_extraction: {metadata.get('error')}")
                 total_prompt_tokens += metadata.get('prompt_tokens', 0)
                 total_completion_tokens += metadata.get('completion_tokens', 0)
                 if metadata.get('cache_hit'):

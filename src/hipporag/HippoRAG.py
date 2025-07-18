@@ -26,7 +26,7 @@ from .evaluation.retrieval_eval import RetrievalRecall
 from .evaluation.qa_eval import QAExactMatch, QAF1Score
 from .prompts.linking import get_query_instruction
 from .prompts.prompt_template_manager import PromptTemplateManager
-from .rerank import DSPyFilter
+from .rerank import DSPyFilter, VectorReranker
 from .utils.misc_utils import *
 from .utils.misc_utils import NerRawOutput, TripleRawOutput
 from .utils.embed_utils import retrieve_knn
@@ -124,7 +124,7 @@ class HippoRAG:
         self.llm_model: BaseLLM = _get_llm_class(self.global_config)
 
         if self.global_config.openie_mode == 'online':
-            self.openie = OpenIE(llm_model=self.llm_model)
+            self.openie = OpenIE(llm_model=self.llm_model, max_workers=self.global_config.ie_max_workers)
         elif self.global_config.openie_mode == 'offline':
             self.openie = VLLMOfflineOpenIE(self.global_config)
 
@@ -150,7 +150,8 @@ class HippoRAG:
 
         self.openie_results_path = os.path.join(self.global_config.save_dir,f'openie_results_ner_{self.global_config.llm_name.replace("/", "_")}.json')
 
-        self.rerank_filter = DSPyFilter(self)
+        # self.rerank_filter = DSPyFilter(self)
+        self.rerank_filter = VectorReranker(self)
 
         self.ready_to_retrieve = False
 
@@ -239,12 +240,16 @@ class HippoRAG:
             new_ner_results_dict, new_triple_results_dict = self.openie.batch_openie(new_openie_rows)
             self.merge_openie_results(all_openie_info, new_openie_rows, new_ner_results_dict, new_triple_results_dict)
 
+        # 去掉多余的分段
+        all_openie_info = [oi for oi in all_openie_info if oi['idx'] in chunk_to_rows]
+
         if self.global_config.save_openie:
             self.save_openie_results(all_openie_info)
 
         ner_results_dict, triple_results_dict = reformat_openie_results(all_openie_info)
 
-        assert len(chunk_to_rows) == len(ner_results_dict) == len(triple_results_dict)
+        if not len(chunk_to_rows) == len(ner_results_dict) == len(triple_results_dict):
+            raise Exception(f"Number of chunks, NER results and triple results do not match, {len(chunk_to_rows)}, {len(ner_results_dict)}, {len(triple_results_dict)}")
 
         # prepare data_store
         chunk_ids = list(chunk_to_rows.keys())
@@ -360,7 +365,7 @@ class HippoRAG:
     def retrieve(self,
                  queries: List[str],
                  num_to_retrieve: int = None,
-                 gold_docs: List[List[str]] = None) -> List[QuerySolution] | Tuple[List[QuerySolution], Dict]:
+                 gold_docs: List[List[str]] = None) -> List[QuerySolution] | Tuple[List[QuerySolution], Dict] | Tuple[List[QuerySolution], List]:
         """
         Performs retrieval using the HippoRAG 2 framework, which consists of several steps:
         - Fact Retrieval
@@ -402,11 +407,13 @@ class HippoRAG:
         self.get_query_embeddings(queries)
 
         retrieval_results = []
+        top_k_facts = []
 
         for q_idx, query in tqdm(enumerate(queries), desc="Retrieving", total=len(queries)):
             rerank_start = time.time()
-            query_fact_scores = self.get_fact_scores(query)
-            top_k_fact_indices, top_k_facts, rerank_log = self.rerank_facts(query, query_fact_scores)
+            sorted_fact_hash_ids, sorted_fact_scores = self.get_fact_scores(query)
+            # query_fact_scores = self.get_fact_scores(query)
+            top_k_fact_indices, top_k_facts, rerank_log = self.rerank_facts(query, sorted_fact_hash_ids)
             rerank_end = time.time()
 
             self.rerank_time += rerank_end - rerank_start
@@ -417,7 +424,7 @@ class HippoRAG:
             else:
                 sorted_doc_ids, sorted_doc_scores = self.graph_search_with_fact_entities(query=query,
                                                                                          link_top_k=self.global_config.linking_top_k,
-                                                                                         query_fact_scores=query_fact_scores,
+                                                                                         sorted_query_fact_scores=sorted_fact_scores,
                                                                                          top_k_facts=top_k_facts,
                                                                                          top_k_fact_indices=top_k_fact_indices,
                                                                                          passage_node_weight=self.global_config.passage_node_weight)
@@ -443,7 +450,7 @@ class HippoRAG:
 
             return retrieval_results, overall_retrieval_result
         else:
-            return retrieval_results
+            return retrieval_results, top_k_facts
 
     def rag_qa(self,
                queries: List[str|QuerySolution],
@@ -978,24 +985,23 @@ class HippoRAG:
         sum_phrase_words = sum([len(e.split()) for chunk in all_openie_info for e in chunk['extracted_entities']])
         num_phrases = sum([len(chunk['extracted_entities']) for chunk in all_openie_info])
 
-        if len(all_openie_info) > 0:
-            # Avoid division by zero if there are no phrases
-            if num_phrases > 0:
-                avg_ent_chars = round(sum_phrase_chars / num_phrases, 4)
-                avg_ent_words = round(sum_phrase_words / num_phrases, 4)
-            else:
-                avg_ent_chars = 0
-                avg_ent_words = 0
-                
-            openie_dict = {
-                'docs': all_openie_info,
-                'avg_ent_chars': avg_ent_chars,
-                'avg_ent_words': avg_ent_words
-            }
-            
-            with open(self.openie_results_path, 'w') as f:
-                json.dump(openie_dict, f)
-            logger.info(f"OpenIE results saved to {self.openie_results_path}")
+        # Avoid division by zero if there are no phrases
+        if num_phrases > 0:
+            avg_ent_chars = round(sum_phrase_chars / num_phrases, 4)
+            avg_ent_words = round(sum_phrase_words / num_phrases, 4)
+        else:
+            avg_ent_chars = 0
+            avg_ent_words = 0
+
+        openie_dict = {
+            'docs': all_openie_info,
+            'avg_ent_chars': avg_ent_chars,
+            'avg_ent_words': avg_ent_words
+        }
+
+        with open(self.openie_results_path, 'w') as f:
+            json.dump(openie_dict, f)
+        logger.info(f"OpenIE results saved to {self.openie_results_path}")
 
     def augment_graph(self):
         """
@@ -1203,6 +1209,9 @@ class HippoRAG:
         self.proc_triples_to_docs = {}
 
         for doc in all_openie_info:
+            # 如果 doc['idx'] 不在 entity_embedding_store 中，跳过。代表已经删除了。
+            if self.chunk_embedding_store.get_row(doc['idx']) is None:
+                continue
             triples = flatten_facts([doc['extracted_triples']])
             for triple in triples:
                 if len(triple) == 3:
@@ -1263,22 +1272,29 @@ class HippoRAG:
                 all_query_strings.append(query)
 
         if len(all_query_strings) > 0:
-            # get all query embeddings
-            logger.info(f"Encoding {len(all_query_strings)} queries for query_to_fact.")
-            query_embeddings_for_triple = self.embedding_model.batch_encode(all_query_strings,
-                                                                            instruction=get_query_instruction('query_to_fact'),
-                                                                            norm=True)
-            for query, embedding in zip(all_query_strings, query_embeddings_for_triple):
+            query_embeddings = self.embedding_model.batch_encode(all_query_strings,
+                                                                 norm=True)
+            for query, embedding in zip(all_query_strings, query_embeddings):
                 self.query_to_embedding['triple'][query] = embedding
-
-            logger.info(f"Encoding {len(all_query_strings)} queries for query_to_passage.")
-            query_embeddings_for_passage = self.embedding_model.batch_encode(all_query_strings,
-                                                                             instruction=get_query_instruction('query_to_passage'),
-                                                                             norm=True)
-            for query, embedding in zip(all_query_strings, query_embeddings_for_passage):
+            for query, embedding in zip(all_query_strings, query_embeddings):
                 self.query_to_embedding['passage'][query] = embedding
 
-    def get_fact_scores(self, query: str) -> np.ndarray:
+            # # get all query embeddings
+            # logger.info(f"Encoding {len(all_query_strings)} queries for query_to_fact.")
+            # query_embeddings_for_triple = self.embedding_model.batch_encode(all_query_strings,
+            #                                                                 instruction=get_query_instruction('query_to_fact'),
+            #                                                                 norm=True)
+            # for query, embedding in zip(all_query_strings, query_embeddings_for_triple):
+            #     self.query_to_embedding['triple'][query] = embedding
+            #
+            # logger.info(f"Encoding {len(all_query_strings)} queries for query_to_passage.")
+            # query_embeddings_for_passage = self.embedding_model.batch_encode(all_query_strings,
+            #                                                                  instruction=get_query_instruction('query_to_passage'),
+            #                                                                  norm=True)
+            # for query, embedding in zip(all_query_strings, query_embeddings_for_passage):
+            #     self.query_to_embedding['passage'][query] = embedding
+
+    def get_fact_scores(self, query: str):
         """
         Retrieves and computes normalized similarity scores between the given query and pre-stored fact embeddings.
 
@@ -1307,16 +1323,20 @@ class HippoRAG:
         # Check if there are any facts
         if len(self.fact_embeddings) == 0:
             logger.warning("No facts available for scoring. Returning empty array.")
-            return np.array([])
+            return [], []
             
-        try:
-            query_fact_scores = np.dot(self.fact_embeddings, query_embedding.T) # shape: (#facts, )
-            query_fact_scores = np.squeeze(query_fact_scores) if query_fact_scores.ndim == 2 else query_fact_scores
-            query_fact_scores = min_max_normalize(query_fact_scores)
-            return query_fact_scores
-        except Exception as e:
-            logger.error(f"Error computing fact scores: {str(e)}")
-            return np.array([])
+        # try:
+        #     query_fact_scores = np.dot(self.fact_embeddings, query_embedding.T) # shape: (#facts, )
+        #     query_fact_scores = np.squeeze(query_fact_scores) if query_fact_scores.ndim == 2 else query_fact_scores
+        #     query_fact_scores = min_max_normalize(query_fact_scores)
+        # except Exception as e:
+        #     logger.error(f"Error computing fact scores: {str(e)}")
+        #     return np.array([])
+        # return sorted_scores
+        # return query_fact_scores
+
+        sorted_hash_ids, sorted_scores = self.fact_embedding_store.search(query_embedding)
+        return sorted_hash_ids, sorted_scores
 
     def dense_passage_retrieval(self, query: str) -> Tuple[np.ndarray, np.ndarray]:
         """
@@ -1397,7 +1417,7 @@ class HippoRAG:
 
     def graph_search_with_fact_entities(self, query: str,
                                         link_top_k: int,
-                                        query_fact_scores: np.ndarray,
+                                        sorted_query_fact_scores: List[float],
                                         top_k_facts: List[Tuple],
                                         top_k_fact_indices: List[str],
                                         passage_node_weight: float = 0.05) -> Tuple[np.ndarray, np.ndarray]:
@@ -1434,8 +1454,7 @@ class HippoRAG:
             subject_phrase = f[0].lower()
             predicate_phrase = f[1].lower()
             object_phrase = f[2].lower()
-            fact_score = query_fact_scores[
-                top_k_fact_indices[rank]] if query_fact_scores.ndim > 0 else query_fact_scores
+            fact_score = sorted_query_fact_scores[rank]
             for phrase in [subject_phrase, object_phrase]:
                 phrase_key = compute_mdhash_id(
                     content=phrase,
@@ -1496,7 +1515,7 @@ class HippoRAG:
         return ppr_sorted_doc_ids, ppr_sorted_doc_scores
 
 
-    def rerank_facts(self, query: str, query_fact_scores: np.ndarray) -> Tuple[List[int], List[Tuple], dict]:
+    def rerank_facts(self, query: str, sorted_query_fact_hash_ids: List[str]) -> Tuple[List[int], List[Tuple], dict]:
         """
 
         Args:
@@ -1511,40 +1530,35 @@ class HippoRAG:
 
         """
         # load args
+        retrieval_top_k = self.global_config.retrieval_top_k
         link_top_k: int = self.global_config.linking_top_k
         
         # Check if there are any facts to rerank
-        if len(query_fact_scores) == 0 or len(self.fact_node_keys) == 0:
+        if len(sorted_query_fact_hash_ids) == 0 or len(self.fact_node_keys) == 0:
             logger.warning("No facts available for reranking. Returning empty lists.")
             return [], [], {'facts_before_rerank': [], 'facts_after_rerank': []}
             
-        try:
-            # Get the top k facts by score
-            if len(query_fact_scores) <= link_top_k:
-                # If we have fewer facts than requested, use all of them
-                candidate_fact_indices = np.argsort(query_fact_scores)[::-1].tolist()
-            else:
-                # Otherwise get the top k
-                candidate_fact_indices = np.argsort(query_fact_scores)[-link_top_k:][::-1].tolist()
-                
-            # Get the actual fact IDs
-            real_candidate_fact_ids = [self.fact_node_keys[idx] for idx in candidate_fact_indices]
-            fact_row_dict = self.fact_embedding_store.get_rows(real_candidate_fact_ids)
-            candidate_facts = [eval(fact_row_dict[id]['content']) for id in real_candidate_fact_ids]
-            
-            # Rerank the facts
-            top_k_fact_indices, top_k_facts, reranker_dict = self.rerank_filter(query,
-                                                                                candidate_facts,
-                                                                                candidate_fact_indices,
-                                                                                len_after_rerank=link_top_k)
-            
-            rerank_log = {'facts_before_rerank': candidate_facts, 'facts_after_rerank': top_k_facts}
-            
-            return top_k_fact_indices, top_k_facts, rerank_log
-            
-        except Exception as e:
-            logger.error(f"Error in rerank_facts: {str(e)}")
-            return [], [], {'facts_before_rerank': [], 'facts_after_rerank': [], 'error': str(e)}
+        # Get the top k facts by score
+        if len(sorted_query_fact_hash_ids) <= retrieval_top_k:
+            # If we have fewer facts than requested, use all of them
+            real_candidate_fact_ids = sorted_query_fact_hash_ids
+        else:
+            # Otherwise get the top k
+            real_candidate_fact_ids = sorted_query_fact_hash_ids[:retrieval_top_k]
+
+        # Get the actual fact IDs
+        fact_row_dict = self.fact_embedding_store.get_rows(real_candidate_fact_ids)
+        candidate_facts = [eval(fact_row_dict[id]['content']) for id in real_candidate_fact_ids]
+
+        # Rerank the facts
+        top_k_fact_indices, top_k_facts, reranker_dict = self.rerank_filter(query,
+                                                                            candidate_facts,
+                                                                            [],
+                                                                            len_after_rerank=link_top_k)
+
+        rerank_log = {'facts_before_rerank': candidate_facts, 'facts_after_rerank': top_k_facts}
+
+        return top_k_fact_indices, top_k_facts, rerank_log
     
     def run_ppr(self,
                 reset_prob: np.ndarray,

@@ -6,7 +6,7 @@ import logging
 from copy import deepcopy
 import pandas as pd
 
-from .utils.misc_utils import compute_mdhash_id, NerRawOutput, TripleRawOutput
+from .utils.misc_utils import compute_mdhash_id, NerRawOutput, TripleRawOutput, min_max_normalize
 
 logger = logging.getLogger(__name__)
 
@@ -144,7 +144,7 @@ class EmbeddingStore:
         self._save_data()
 
     def get_row(self, hash_id):
-        return self.hash_id_to_row[hash_id]
+        return self.hash_id_to_row.get(hash_id)
 
     def get_hash_id(self, text):
         return self.text_to_hash_id[text]
@@ -153,7 +153,7 @@ class EmbeddingStore:
         if not hash_ids:
             return {}
 
-        results = {id : self.hash_id_to_row[id] for id in hash_ids}
+        results = {id : self.hash_id_to_row.get(id) for id in hash_ids}
 
         return results
 
@@ -177,3 +177,24 @@ class EmbeddingStore:
         embeddings = np.array(self.embeddings, dtype=dtype)[indices]
 
         return embeddings
+
+    @property
+    def embedding_data(self) -> np.ndarray:
+        if not hasattr(self, "_embedding_data"):
+            self._embedding_data = np.array(self.get_embeddings(list(self.get_all_ids())))
+
+        return self._embedding_data
+
+    def search(self, query_embedding, top_k=500):
+        """
+        Search for the top-k most similar records to the query embedding.
+        返回 hash_id 和 score
+        """
+        scores = np.dot(self.embedding_data, query_embedding.T)
+        scores = np.squeeze(scores) if scores.ndim == 2 else scores
+        scores = min_max_normalize(scores)
+
+        sorted_indices = np.argsort(scores)[::-1]
+        sorted_scores = scores[sorted_indices.tolist()]
+        sorted_hash_ids = [self.hash_ids[idx] for idx in sorted_indices.tolist()]
+        return sorted_hash_ids[:top_k], sorted_scores.tolist()[:top_k]

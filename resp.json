@@ -1,0 +1,26 @@
+[
+  {
+    "kl_id": "kl_001",
+    "segments": [
+      {
+        "seg_id": "xxx",
+        "content": "xxx"
+      }
+    ],
+    "entities": [
+      {
+        "id": "xxx",
+        "entity": "name",
+        "description": ""
+      }
+    ],
+    "relationships": [
+      {
+        "id": "xxx",
+        "source": "大语言模型",
+        "target": "LLM",
+        "description": "大语言模型和LLM是同一实体的不同名称。"
+      }
+    ]
+  }
+]

@@ -174,7 +174,7 @@ class BaseConfig:
         metadata={"help": "The number of linked nodes at each retrieval step"}
     )
     retrieval_top_k: int = field(
-        default=200,
+        default=10,
         metadata={"help": "Retrieving k documents at each step"}
     )
     damping: float = field(
@@ -221,6 +221,10 @@ class BaseConfig:
     corpus_len: Optional[int] = field(
         default=None,
         metadata={"help": "Length of the corpus to use."}
+    )
+    ie_max_workers: int = field(
+        default=2,
+        metadata={"help": "The number of max workers to use for information extraction."}
     )
     
     
