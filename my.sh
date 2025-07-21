@@ -26,6 +26,9 @@ INSTALL fts;
 cd ~/data1/hipporag
 docker run --name zts-hipporag -dti -v "$(pwd)":/data --network=host docker.art.haizhi.com/ai/alita-x86_64:ai_1.9.5 bash
 docker exec -ti zts-hipporag bash
+pip install hipporag-0.1-py3-none-any.whl                                                                            100%   90KB   2.7MB/s   00:00
+hz_graphrag
+
 
 export https_proxy=http://192.168.1.167:7890 http_proxy=http://192.168.1.167:7890 all_proxy=socks5://192.168.1.167:7890
 

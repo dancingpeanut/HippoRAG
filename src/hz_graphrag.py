@@ -44,9 +44,9 @@ async def lifespan(app: FastAPI):
         t.start()
         worker_threads.append(t)
     logging.info(f"已启动 {len(worker_threads)} 个工作线程")
-    
+
     yield
-    
+
     # 关闭时执行
     logging.info("应用关闭中...")
 
@@ -323,6 +323,10 @@ async def search(request: Request):
     return {"content": result}
 
 
-if __name__ == "__main__":
+def main():
     api_workers = int(os.environ.get('API_WORKERS', 1))
-    uvicorn.run("demo_api:app", host="0.0.0.0", port=12085, reload=False, workers=api_workers)
+    uvicorn.run("hz_graphrag:app", host="0.0.0.0", port=12085, reload=False, workers=api_workers)
+
+
+if __name__ == "__main__":
+    main()

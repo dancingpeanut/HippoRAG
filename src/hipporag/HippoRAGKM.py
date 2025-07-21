@@ -1,7 +1,7 @@
 import functools
 import logging
 import sqlite3
-from typing import List, Set
+from typing import List, Set, Dict
 
 from filelock import FileLock
 
@@ -169,6 +169,7 @@ class HippoRAGKM(HippoRAG):
         nodes = {}
         relationships = []
         chunk_seg_id_map = {}
+
         for triple_content, chunks in self.proc_triples_to_docs.items():
             triple = eval(triple_content)
             seg_ids = set([])
@@ -216,10 +217,25 @@ class HippoRAGKM(HippoRAG):
 
         for v in nodes.values():
             v['source_id'] = ','.join(list(v['source_id']))
+
+        communities = self.graph.community_multilevel()
+        community_infos: List[Dict] = []
+        for i, community in enumerate(communities):
+            community_id = str(i)
+            community_infos.append({
+                "id": community_id,
+                "name": community_id,
+                "description": ""
+            })
+            for v_id in community:
+                entity_info = self.entity_embedding_store.get_row(self.graph.vs[v_id]['name'])
+                if entity_info and entity_info['content'] in nodes:
+                    nodes[entity_info['content']]['community'] = community_id
+
         result = {
             "nodes": list(nodes.values()),
             "relationships": relationships,
-            "communities": [],
+            "communities": community_infos,
             "community_reports": []
         }
         return result

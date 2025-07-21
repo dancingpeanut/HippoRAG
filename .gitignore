@@ -22,3 +22,6 @@ clear_outputs_and_logs.sh
 # Ignore the env file
 .env
 .venv
+build
+dist
+*.egg-info
