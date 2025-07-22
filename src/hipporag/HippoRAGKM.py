@@ -1,11 +1,11 @@
 import functools
 import logging
-import sqlite3
 from typing import List, Set, Dict
 
 from filelock import FileLock
 
 from hipporag import HippoRAG
+from hipporag.utils import db_util
 from hipporag.utils.misc_utils import compute_mdhash_id
 
 DB_FILE = 'outputs/db.sqlite'
@@ -362,41 +362,26 @@ class HippoRAGKM(HippoRAG):
         """
         将seg_ids保存到数据库，使用sqlite，表为SEG_INFO(string kl_id, string seg_id, string hipporag_seg_id)
         """
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            # 创建表（如果不存在）
-            cursor.execute('''
-                CREATE TABLE IF NOT EXISTS SEG_INFO (
-                    kl_id TEXT,
-                    seg_id TEXT,
-                    hipporag_seg_id TEXT,
-                    PRIMARY KEY (kl_id, seg_id)
-                )
-            ''')
-            # 插入数据
-            for seg in seg_infos:
-                kl_id = seg['kl_id']
-                seg_id = seg['seg_id']
-                hipporag_seg_id = seg['hipporag_seg_id']
-                cursor.execute('''
-                    INSERT OR REPLACE INTO SEG_INFO (kl_id, seg_id, hipporag_seg_id)
-                    VALUES (?, ?, ?)
-                ''', (kl_id, seg_id, hipporag_seg_id))
-            conn.commit()
+        sqls = []
+        params = []
+        for seg in seg_infos:
+            kl_id = seg['kl_id']
+            seg_id = seg['seg_id']
+            hipporag_seg_id = seg['hipporag_seg_id']
+            sqls.append("INSERT OR REPLACE INTO SEG_INFO (kl_id, seg_id, hipporag_seg_id) VALUES (?, ?, ?)")
+            params.append((kl_id, seg_id, hipporag_seg_id))
+        db_util.execute_sqls(sqls, params)
 
     @lock_exec
     def get_all_seg_infos(self, kl_id: str):
         """
         从数据库中获取所有seg_ids，返回 List[dict]，每个dict包含 kl_id、seg_id、hipporag_seg_id
         """
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            cursor.execute('SELECT seg_id, hipporag_seg_id FROM SEG_INFO where kl_id = ?', (kl_id,))
-            rows = cursor.fetchall()
-            return [
-                {'seg_id': row[0], 'hipporag_seg_id': row[1]}
-                for row in rows
-            ]
+        rows = db_util.execute_sql('SELECT seg_id, hipporag_seg_id FROM SEG_INFO where kl_id = ?', (kl_id,))
+        return [
+            {'seg_id': row[0], 'hipporag_seg_id': row[1]}
+            for row in rows
+        ]
 
     @lock_exec
     def get_seg_info_by_chunk_ids(self, kl_id: str, chunk_ids: List[str]):
@@ -405,16 +390,13 @@ class HippoRAGKM(HippoRAG):
         """
         if not chunk_ids:
             return []
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            placeholders = ','.join('?' for _ in chunk_ids)
-            sql = f'SELECT seg_id, hipporag_seg_id FROM SEG_INFO WHERE kl_id = ? AND hipporag_seg_id IN ({placeholders})'
-            cursor.execute(sql, [kl_id] + chunk_ids)
-            rows = cursor.fetchall()
-            return [
-                {'kl_id': kl_id, 'seg_id': row[0], 'hipporag_seg_id': row[1]}
-                for row in rows
-            ]
+        placeholders = ','.join('?' for _ in chunk_ids)
+        sql = f'SELECT seg_id, hipporag_seg_id FROM SEG_INFO WHERE kl_id = ? AND hipporag_seg_id IN ({placeholders})'
+        rows = db_util.execute_sql(sql, [kl_id] + chunk_ids)
+        return [
+            {'kl_id': kl_id, 'seg_id': row[0], 'hipporag_seg_id': row[1]}
+            for row in rows
+        ]
 
     @lock_exec
     def get_seg_info_by_seg_ids(self, kl_id: str, seg_ids: List[str]):
@@ -423,16 +405,13 @@ class HippoRAGKM(HippoRAG):
         """
         if not seg_ids:
             return []
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            placeholders = ','.join('?' for _ in seg_ids)
-            sql = f'SELECT seg_id, hipporag_seg_id FROM SEG_INFO WHERE kl_id = ? AND seg_id IN ({placeholders})'
-            cursor.execute(sql, [kl_id] + seg_ids)
-            rows = cursor.fetchall()
-            return [
-                {'kl_id': kl_id, 'seg_id': row[0], 'hipporag_seg_id': row[1]}
-                for row in rows
-            ]
+        placeholders = ','.join('?' for _ in seg_ids)
+        sql = f'SELECT seg_id, hipporag_seg_id FROM SEG_INFO WHERE kl_id = ? AND seg_id IN ({placeholders})'
+        rows = db_util.execute_sql(sql, [kl_id] + seg_ids)
+        return [
+            {'kl_id': kl_id, 'seg_id': row[0], 'hipporag_seg_id': row[1]}
+            for row in rows
+        ]
 
     @lock_exec
     def delete_seg_infos(self, kl_id: str, seg_ids: List[str]):
@@ -441,14 +420,10 @@ class HippoRAGKM(HippoRAG):
         """
         if not seg_ids:
             return
-        with sqlite3.connect(DB_FILE) as conn:
-            cursor = conn.cursor()
-            # 构造占位符 (?, ?, ...)
-            placeholders = ','.join('?' for _ in seg_ids)
-            sql = f'''
-                DELETE FROM SEG_INFO
-                WHERE kl_id = ?
-                AND seg_id IN ({placeholders})
-            '''
-            cursor.execute(sql, [kl_id] + seg_ids)
-            conn.commit()
+        placeholders = ','.join('?' for _ in seg_ids)
+        sql = f'''
+            DELETE FROM SEG_INFO
+            WHERE kl_id = ?
+            AND seg_id IN ({placeholders})
+        '''
+        db_util.execute_sql(sql, [kl_id] + seg_ids)

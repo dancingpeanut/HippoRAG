@@ -1,5 +1,6 @@
 import os
 import sqlite3
+from typing import List, Tuple
 
 from filelock import FileLock
 
@@ -20,6 +21,14 @@ def initialize_db(conn):
             etime TIMESTAMP
         )
     """)
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS SEG_INFO (
+            kl_id TEXT,
+            seg_id TEXT,
+            hipporag_seg_id TEXT,
+            PRIMARY KEY (kl_id, seg_id)
+        )
+    ''')
     conn.commit()
 
 
@@ -35,3 +44,19 @@ def execute_sql(sql, params=None):
         finally:
             conn.close()
     return rows
+
+def execute_sqls(sqls: List[str], params: List[Tuple]):
+    results = []
+    with FileLock(DB_FILE_LOCK):
+        conn = sqlite3.connect(DB_FILE)
+        initialize_db(conn)
+        for sql, params in zip(sqls, params):
+            try:
+                c = conn.cursor()
+                c.execute(sql, params)
+                conn.commit()
+                rows = c.fetchall()
+                results.append(rows)
+            finally:
+                conn.close()
+    return results
