@@ -1,24 +1,9 @@
-import functools
 import logging
 from typing import List, Set, Dict
-
-from filelock import FileLock
 
 from hipporag import HippoRAG
 from hipporag.utils import db_util
 from hipporag.utils.misc_utils import compute_mdhash_id
-
-DB_FILE = 'outputs/db.sqlite'
-LOCK_FILE = 'outputs/db.sqlite.lock'
-
-
-def lock_exec(func):
-    """无参数的文件锁装饰器，阻塞等待锁"""
-    @functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        with FileLock(LOCK_FILE):  # 阻塞直到获取锁
-            return func(*args, **kwargs)
-    return wrapper
 
 
 class HippoRAGKM(HippoRAG):
@@ -357,7 +342,6 @@ class HippoRAGKM(HippoRAG):
             self.index(to_add_docs)
             self.save_seg_infos(seg_infos)
 
-    @lock_exec
     def save_seg_infos(self, seg_infos: List[dict[str, str]]):
         """
         将seg_ids保存到数据库，使用sqlite，表为SEG_INFO(string kl_id, string seg_id, string hipporag_seg_id)
@@ -372,7 +356,6 @@ class HippoRAGKM(HippoRAG):
             params.append((kl_id, seg_id, hipporag_seg_id))
         db_util.execute_sqls(sqls, params)
 
-    @lock_exec
     def get_all_seg_infos(self, kl_id: str):
         """
         从数据库中获取所有seg_ids，返回 List[dict]，每个dict包含 kl_id、seg_id、hipporag_seg_id
@@ -383,7 +366,6 @@ class HippoRAGKM(HippoRAG):
             for row in rows
         ]
 
-    @lock_exec
     def get_seg_info_by_chunk_ids(self, kl_id: str, chunk_ids: List[str]):
         """
         从数据库中获取seg_ids，返回 List[dict]，每个dict包含 kl_id、seg_id、hipporag_seg_id
@@ -398,7 +380,6 @@ class HippoRAGKM(HippoRAG):
             for row in rows
         ]
 
-    @lock_exec
     def get_seg_info_by_seg_ids(self, kl_id: str, seg_ids: List[str]):
         """
         从数据库中获取seg_ids，返回 List[dict]，每个dict包含 kl_id、seg_id、hipporag_seg_id
@@ -413,7 +394,6 @@ class HippoRAGKM(HippoRAG):
             for row in rows
         ]
 
-    @lock_exec
     def delete_seg_infos(self, kl_id: str, seg_ids: List[str]):
         """
         从数据库中删除指定kl_id和seg_ids的记录

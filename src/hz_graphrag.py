@@ -11,8 +11,10 @@ from enum import Enum
 from contextlib import asynccontextmanager
 from typing import List, Dict
 
+log_level = os.environ.get('LOG_LEVEL', 'INFO').upper()
+
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.getLevelName(log_level),
     format='%(asctime)s %(levelname)s %(message)s',
     datefmt='%Y-%m-%d %H:%M:%S',
 )
@@ -201,7 +203,7 @@ def update_task(data: dict):
         sql = f"UPDATE task_status SET status = ?, data = ?, etime = ? WHERE kl_id = ?"
         params = (status, json.dumps(data), now_t, kl_id)
     db_util.execute_sql(sql, params)
-    logging.info(f"更新任务状态：{data['state']}, {data['message']}")
+    logging.info(f"更新任务状态完成：{data['state']}, {data['message']}")
 
 
 def get_task(kl_id: str):

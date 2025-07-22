@@ -1,3 +1,4 @@
+import logging
 import os
 import sqlite3
 from typing import List, Tuple
@@ -33,7 +34,8 @@ def initialize_db(conn):
 
 
 def execute_sql(sql, params=None):
-    with FileLock(DB_FILE_LOCK):
+    logging.info(f'execute_sql: {sql}')
+    with FileLock(DB_FILE_LOCK, timeout=30):
         conn = sqlite3.connect(DB_FILE)
         try:
             initialize_db(conn)
@@ -49,14 +51,14 @@ def execute_sqls(sqls: List[str], params: List[Tuple]):
     results = []
     with FileLock(DB_FILE_LOCK):
         conn = sqlite3.connect(DB_FILE)
-        initialize_db(conn)
-        for sql, params in zip(sqls, params):
-            try:
+        try:
+            initialize_db(conn)
+            for sql, params in zip(sqls, params):
                 c = conn.cursor()
                 c.execute(sql, params)
-                conn.commit()
                 rows = c.fetchall()
                 results.append(rows)
-            finally:
-                conn.close()
+            conn.commit()
+        finally:
+            conn.close()
     return results
