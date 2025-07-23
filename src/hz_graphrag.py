@@ -327,7 +327,8 @@ async def search(request: Request):
 
 def main():
     api_workers = int(os.environ.get('API_WORKERS', 1))
-    uvicorn.run("hz_graphrag:app", host="0.0.0.0", port=8050, reload=False, workers=api_workers)
+    port = int(os.environ.get('PORT', 8050))
+    uvicorn.run("hz_graphrag:app", host="0.0.0.0", port=port, reload=False, workers=api_workers)
 
 
 if __name__ == "__main__":
