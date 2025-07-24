@@ -172,7 +172,8 @@ class VectorReranker(Reranker):
             "max_length": 512,
             "batch_size": 64
         }
-        url = f"{self.embedding_base_url}/rerank".replace('//', '/')
+        url = f"{self.embedding_base_url}/rerank"
+        url = re.sub(r'(?<!:)//', '/', url)
         res = requests.post(url, json=data).json()
         if "results" not in res:
             raise Exception(f"Invalid response: {res}")
