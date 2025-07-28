@@ -24,7 +24,7 @@ def convert_text_chat_messages_to_input_ids(messages: List[TextChatMessage], tok
     )
     encoded = tokenizer(prompt, add_special_tokens=False)
     return encoded['input_ids']
-from vllm import SamplingParams, LLM
+
 class VLLMOffline:
 
     def _init_llm_config(self) -> None:
@@ -65,6 +65,8 @@ class VLLMOffline:
         messages_list = [messages]
         prompt_ids = convert_text_chat_messages_to_input_ids(messages_list, self.tokenizer)
 
+        from vllm import SamplingParams, LLM
+
         vllm_output = self.client.generate(prompt_token_ids=prompt_ids,  sampling_params=SamplingParams(max_tokens=max_tokens, temperature=0))
         response = vllm_output[0].outputs[0].text
         prompt_tokens = len(vllm_output[0].prompt_token_ids)
@@ -78,6 +80,8 @@ class VLLMOffline:
     def batch_infer(self, messages_list: List[List[TextChatMessage]], max_tokens=2048, json_template=None):
         if len(messages_list) > 1:
             logger.info(f"Calling VLLM offline, # of messages {len(messages_list)}")
+
+        from vllm import SamplingParams, LLM
 
         guided = None
         if json_template is not None:
