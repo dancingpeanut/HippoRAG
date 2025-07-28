@@ -10,6 +10,7 @@ setup(
     py_modules=["hz_graphrag"],  # 显式包含单独的模块
     install_requires=[  # 项目依赖
         "python_igraph==0.11.8",
+        "tenacity"
     ],
     python_requires=">=3.10",
     # 其他元数据
