@@ -95,11 +95,11 @@ class OpenIE:
                     [e['name'].strip() for e in self.graph_entity_config['relationships']])
                 extend_prompt += "\n提取的实体关系必须是以下类型：" + edge_info
             extend_prompt += "\n" + self.graph_entity_config.get('extend_prompt', '').strip()
+            logger.info(f"Extend prompt: {extend_prompt}")
             last_message['content'] = extend_prompt + "\n段落内容：\n" + last_message['content']
 
         if self.llm_model.llm_name.lower().startswith('qwen3'):
             last_message['content'] = "/no_think\n" + last_message['content']
-        logger.info(f"Extend prompt: {last_message['content']}")
 
     def ner(self, chunk_key: str, passage: str) -> NerRawOutput:
         # PREPROCESSING
