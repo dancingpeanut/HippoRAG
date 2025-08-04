@@ -65,19 +65,46 @@ def _extract_triples_from_response(real_response):
     return TripleExtract.model_validate_json(match.group()).triples
 
 
+EXTENDED_PROMPT = """
+提取要求：
+{requirements}
+
+段落内容：
+{passage}
+"""
+
 
 class OpenIE:
-    def __init__(self, llm_model: CacheOpenAI, max_workers: int):
+    def __init__(self, llm_model: CacheOpenAI, max_workers: int, graph_entity_config=None):
         # Init prompt template manager
         self.prompt_template_manager = PromptTemplateManager(role_mapping={"system": "system", "user": "user", "assistant": "assistant"})
         self.llm_model = llm_model
         self.max_workers = max_workers
+        self.graph_entity_config = graph_entity_config
+
+    def extend_prompt(self, messages, is_ner=False):
+        last_message = messages[-1]
+
+        if self.graph_entity_config:
+            extend_prompt = "提取要求：\n提取的实体类型必须是以下类型："
+            entity_info = '"%s"' % '","'.join(
+                [e['name'].strip() for e in self.graph_entity_config['entities']])
+            extend_prompt += entity_info
+            if not is_ner and self.graph_entity_config.get('relationships'):
+                edge_info = '"%s"' % '","'.join(
+                    [e['name'].strip() for e in self.graph_entity_config['relationships']])
+                extend_prompt += "\n提取的实体关系必须是以下类型：" + edge_info
+            extend_prompt += "\n" + self.graph_entity_config.get('extend_prompt', '').strip()
+            last_message['content'] = extend_prompt + "\n段落内容：\n" + last_message['content']
+
+        if self.llm_model.llm_name.lower().startswith('qwen3'):
+            last_message['content'] = "/no_think\n" + last_message['content']
+        logger.info(f"Extend prompt: {last_message['content']}")
 
     def ner(self, chunk_key: str, passage: str) -> NerRawOutput:
         # PREPROCESSING
         ner_input_message = self.prompt_template_manager.render(name='ner', passage=passage)
-        if self.llm_model.llm_name.lower().startswith('qwen3'):
-            ner_input_message[-1]['content'] = "/no_think" + ner_input_message[-1]['content']
+        self.extend_prompt(ner_input_message)
         raw_response = ""
         metadata = {}
         result = None
@@ -119,8 +146,7 @@ class OpenIE:
             passage=passage,
             named_entity_json=json.dumps({"named_entities": named_entities})
         )
-        if self.llm_model.llm_name.lower().startswith('qwen3'):
-            messages[-1]['content'] = "/no_think" + messages[-1]['content']
+        self.extend_prompt(messages)
 
         raw_response = ""
         metadata = {}

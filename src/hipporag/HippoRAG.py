@@ -45,7 +45,8 @@ class HippoRAG:
                  embedding_model_name=None,
                  embedding_base_url=None,
                  azure_endpoint=None,
-                 azure_embedding_endpoint=None):
+                 azure_embedding_endpoint=None,
+                 graph_entity_config=None,):
         """
         Initializes an instance of the class and its related components.
 
@@ -124,7 +125,7 @@ class HippoRAG:
         self.llm_model: BaseLLM = _get_llm_class(self.global_config)
 
         if self.global_config.openie_mode == 'online':
-            self.openie = OpenIE(llm_model=self.llm_model, max_workers=self.global_config.ie_max_workers)
+            self.openie = OpenIE(llm_model=self.llm_model, max_workers=self.global_config.ie_max_workers, graph_entity_config=graph_entity_config)
         elif self.global_config.openie_mode == 'offline':
             self.openie = VLLMOfflineOpenIE(self.global_config)
 

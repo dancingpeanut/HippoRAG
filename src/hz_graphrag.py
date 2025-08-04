@@ -99,7 +99,7 @@ def get_kl_model_info(kl_id: str, ent_id: str):
     return llm_name, embedding_name
 
 
-def create_hipporag(ent_id: str, kl_id: str, env: dict):
+def create_hipporag(ent_id: str, kl_id: str, env: dict, graph_entity_config: dict = None):
     os.environ["OPENAI_API_KEY"] = env.get("GRAPHRAG_API_KEY", "empty")
     global_config = BaseConfig()
     global_config.ie_max_workers = int(os.environ.get("IE_MAX_WORKERS", 4))
@@ -111,7 +111,8 @@ def create_hipporag(ent_id: str, kl_id: str, env: dict):
         embedding_base_url=env['GRAPHRAG_LLM_API_BASE'],
         ent_id=ent_id,
         kl_id=kl_id,
-        global_config=global_config
+        global_config=global_config,
+        graph_entity_config=graph_entity_config,
     )
 
 
@@ -135,7 +136,7 @@ class get_hipporag:
                     queue = Queue(maxsize=1)
                     GRAPH_WORKERS.set(kl_id, queue)
                     ent_id = self.params['ent_id']
-                    hipporag = create_hipporag(ent_id=ent_id, kl_id=kl_id, env=self.params['env'])
+                    hipporag = create_hipporag(ent_id=ent_id, kl_id=kl_id, env=self.params['env'], graph_entity_config=self.params.get('graph_entity_config'))
                     queue.put(hipporag)
         self.hipporag = queue.get()
         self.queue = queue
@@ -245,7 +246,7 @@ async def detail(request: Request):
     env = deepcopy(DEFAULT_ENV)
     env['GRAPHRAG_EMBEDDING_MODEL'] = embedding_name
     env['GRAPHRAG_LLM_MODEL'] = llm_name
-    hipporag = create_hipporag(ent_id=params['ent_id'], kl_id=params['kl_id'], env=env)
+    hipporag = create_hipporag(ent_id=params['ent_id'], kl_id=params['kl_id'], env=env, graph_entity_config=params.get('graph_entity_config'))
     return hipporag.graph_info()
 
 
@@ -269,7 +270,7 @@ async def seg_hit_test(request: Request):
     env = deepcopy(DEFAULT_ENV)
     env['GRAPHRAG_EMBEDDING_MODEL'] = embedding_name
     env['GRAPHRAG_LLM_MODEL'] = llm_name
-    hipporag = create_hipporag(ent_id=params['ent_id'], kl_id=params['kl_id'], env=env)
+    hipporag = create_hipporag(ent_id=params['ent_id'], kl_id=params['kl_id'], env=env, graph_entity_config=params.get('graph_entity_config'))
     to_add_seg_ids, to_delete_seg_ids, _ = hipporag.check_segs(params['seg_ids'])
     result = {
       "hit_segs": list(set(params['seg_ids']) - to_add_seg_ids),

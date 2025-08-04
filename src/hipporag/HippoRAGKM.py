@@ -17,7 +17,8 @@ class HippoRAGKM(HippoRAG):
             embedding_model_name=kwargs.get('embedding_model_name'),
             embedding_base_url=kwargs.get('embedding_base_url'),
             azure_endpoint=kwargs.get('azure_endpoint'),
-            azure_embedding_endpoint=kwargs.get('azure_embedding_endpoint')
+            azure_embedding_endpoint=kwargs.get('azure_embedding_endpoint'),
+            graph_entity_config=kwargs.get('graph_entity_config'),
         )
         self.ent_id = kwargs['ent_id']
         self.kl_id = kwargs['kl_id']

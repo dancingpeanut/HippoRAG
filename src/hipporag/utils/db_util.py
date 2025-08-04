@@ -34,7 +34,7 @@ def initialize_db(conn):
 
 
 def execute_sql(sql, params=None):
-    logging.info(f'execute_sql: {sql}')
+    logging.info(f'execute_sql: {sql}, params: {params}')
     with FileLock(DB_FILE_LOCK, timeout=30):
         conn = sqlite3.connect(DB_FILE)
         try:
@@ -46,6 +46,7 @@ def execute_sql(sql, params=None):
         finally:
             conn.close()
     return rows
+
 
 def execute_sqls(sqls: List[str], params: List[Tuple]):
     results = []
