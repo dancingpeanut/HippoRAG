@@ -104,7 +104,7 @@ class OpenIE:
     def ner(self, chunk_key: str, passage: str) -> NerRawOutput:
         # PREPROCESSING
         ner_input_message = self.prompt_template_manager.render(name='ner', passage=passage)
-        self.extend_prompt(ner_input_message)
+        self.extend_prompt(ner_input_message, is_ner=True)
         raw_response = ""
         metadata = {}
         result = None
