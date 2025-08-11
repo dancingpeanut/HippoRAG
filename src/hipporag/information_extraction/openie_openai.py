@@ -221,6 +221,7 @@ class OpenIE:
                 for chunk_key, passage in chunk_passages.items()
             }
 
+            process_num = 0
             pbar = tqdm(as_completed(ner_futures), total=len(ner_futures), desc="NER")
             for future in pbar:
                 result = future.result()
@@ -239,6 +240,8 @@ class OpenIE:
                     'total_completion_tokens': total_completion_tokens,
                     'num_cache_hit': num_cache_hit
                 })
+                process_num += 1
+                logger.info(f"\nOpenIE NER process {process_num}/{len(chunks)}, max workers: {self.max_workers}")
 
         triple_results_list = []
         total_prompt_tokens, total_completion_tokens, num_cache_hit = 0, 0, 0
@@ -251,6 +254,7 @@ class OpenIE:
                 for ner_result in ner_results_list
             }
             # Collect triple extraction results with progress bar
+            process_num = 0
             pbar = tqdm(as_completed(re_futures), total=len(re_futures), desc="Extracting triples")
             for future in pbar:
                 result = future.result()
@@ -267,6 +271,8 @@ class OpenIE:
                     'total_completion_tokens': total_completion_tokens,
                     'num_cache_hit': num_cache_hit
                 })
+                process_num += 1
+                logger.info(f"\nOpenIE Extracting triples process {process_num}/{len(chunks)}, max workers: {self.max_workers}")
 
         ner_results_dict = {res.chunk_id: res for res in ner_results_list}
         triple_results_dict = {res.chunk_id: res for res in triple_results_list}

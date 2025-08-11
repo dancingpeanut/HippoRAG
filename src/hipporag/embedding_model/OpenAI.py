@@ -96,6 +96,7 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
         if len(texts) <= batch_size:
             results = self.encode(texts)
         else:
+            process_num = 0
             pbar = tqdm(total=len(texts), desc="Batch Encoding")
             results = []
             for i in range(0, len(texts), batch_size):
@@ -105,6 +106,7 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
                 except:
                     import ipdb; ipdb.set_trace()
                 pbar.update(batch_size)
+                logger.info(f"\nBatch Encoding process {process_num}/{len(texts)}")
             pbar.close()
             results = np.concatenate(results)
 

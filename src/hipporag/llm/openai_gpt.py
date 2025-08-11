@@ -1,6 +1,7 @@
 import functools
 import hashlib
 import json
+import logging
 import os
 import sqlite3
 from copy import deepcopy
@@ -88,10 +89,13 @@ def cache_response(func):
 
     return wrapper
 
+INFER_MAX_RETRIES = int(os.environ.get("INFER_MAX_RETRIES", 10))
+
 def dynamic_retry_decorator(func):
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
-        max_retries = getattr(self, "max_retries", 5)  
+        max_retries = getattr(self, "max_retries", INFER_MAX_RETRIES)
+        logging.info(f"infer max_retries: {max_retries}")
         dynamic_retry = retry(stop=stop_after_attempt(max_retries), wait=wait_fixed(1))
         decorated_func = dynamic_retry(func)
         return decorated_func(self, *args, **kwargs)
