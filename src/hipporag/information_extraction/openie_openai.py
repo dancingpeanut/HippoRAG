@@ -108,7 +108,7 @@ class OpenIE:
         raw_response = ""
         metadata = {}
         result = None
-        for _ in range(3):
+        for _ in range(5):
             try:
                 # LLM INFERENCE
                 raw_response, metadata, cache_hit = self.llm_model.infer(messages=ner_input_message)
@@ -152,7 +152,7 @@ class OpenIE:
         metadata = {}
         result = None
         temperature = 0.7
-        for _ in range(3):
+        for _ in range(5):
             try:
                 # LLM INFERENCE
                 raw_response, metadata, cache_hit = self.llm_model.infer(messages=messages, temperature=temperature)
