@@ -95,6 +95,7 @@ def dynamic_retry_decorator(func):
     @functools.wraps(func)
     def wrapper(self, *args, **kwargs):
         max_retries = getattr(self, "max_retries", INFER_MAX_RETRIES)
+        max_retries = INFER_MAX_RETRIES
         logging.info(f"infer max_retries: {max_retries}")
         dynamic_retry = retry(stop=stop_after_attempt(max_retries), wait=wait_fixed(1))
         decorated_func = dynamic_retry(func)
