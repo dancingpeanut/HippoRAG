@@ -13,7 +13,7 @@ from filelock import FileLock
 from openai import OpenAI
 from openai import AzureOpenAI
 from packaging import version
-from tenacity import retry, stop_after_attempt, wait_fixed
+from tenacity import retry, stop_after_attempt, wait_fixed, wait_random
 
 from ..utils.config_utils import BaseConfig
 from ..utils.llm_utils import (
@@ -97,7 +97,7 @@ def dynamic_retry_decorator(func):
         max_retries = getattr(self, "max_retries", INFER_MAX_RETRIES)
         max_retries = INFER_MAX_RETRIES
         logging.info(f"infer max_retries: {max_retries}")
-        dynamic_retry = retry(stop=stop_after_attempt(max_retries), wait=wait_fixed(1))
+        dynamic_retry = retry(stop=stop_after_attempt(max_retries), wait=wait_random(1, 5))
         decorated_func = dynamic_retry(func)
         return decorated_func(self, *args, **kwargs)
     return wrapper

@@ -128,7 +128,7 @@ class OpenIE:
                 break
             except Exception as e:
                 # For any other unexpected exceptions, log them and return with the error message
-                logger.warning(f"Exception for ner extract chunk {chunk_key}, response: {raw_response}, error: {e}")
+                logger.warning(f"Exception for ner extract chunk {chunk_key}, response: {raw_response}, passage: {passage}, error: {e}")
                 metadata.update({'error': str(e)})
                 result = NerRawOutput(
                     chunk_id=chunk_key,
@@ -171,7 +171,7 @@ class OpenIE:
                 )
                 break
             except Exception as e:
-                logger.warning(f"Exception for triple extract chunk {chunk_key}, response: {raw_response}, error: {e}")
+                logger.warning(f"Exception for triple extract chunk {chunk_key}, response: {raw_response}, passage: {passage}, error: {e}")
                 metadata.update({'error': str(e)})
                 result = TripleRawOutput(
                     chunk_id=chunk_key,
