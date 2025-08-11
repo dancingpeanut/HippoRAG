@@ -107,7 +107,7 @@ class OpenAIEmbeddingModel(BaseEmbeddingModel):
                     import ipdb; ipdb.set_trace()
                 pbar.update(batch_size)
                 process_num += batch_size
-                logger.info(f"\nBatch Encoding process {process_num}/{len(texts)}")
+                logger.info(f"\nBatch Encoding process {process_num}/{len(texts)}, batch size: {batch_size}")
             pbar.close()
             results = np.concatenate(results)
 
