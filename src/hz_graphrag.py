@@ -266,9 +266,11 @@ def put_task(task_type: TaskType, params: dict):
 async def detail(request: Request):
     if request.method == "GET":
         kl_id = request.query_params.get('kl_id')
-        rows = db_util.execute_sql("SELECT env FROM KG WHERE kl_id = ?", (kl_id,))
+        rows = db_util.execute_sql("SELECT info FROM KG WHERE kl_id = ?", (kl_id,))
         if rows:
-            env = json.loads(rows[0][0])
+            params = json.loads(rows[0][0])
+        else:
+            raise Exception(f"未找到知识库: {kl_id}")
     else:
         body = await request.body()
         params = json.loads(body)
