@@ -97,7 +97,10 @@ class OpenIE:
                 extend_prompt += "\n提取的三元组必须是符合以下类型（subject-predicate-object）：" + edge_info
             extend_prompt += "\n" + self.graph_entity_config.get('extend_prompt', '').strip()
             logger.info(f"Extend prompt: {extend_prompt}")
-            last_message['content'] = extend_prompt + "\n段落内容：\n" + last_message['content']
+        else:
+            extend_prompt = ''
+        last_message['content'] = last_message['content'].replace('#extend_prompt#', extend_prompt)
+
 
         if self.llm_model.llm_name.lower().startswith('qwen3'):
             last_message['content'] = "/no_think\n" + last_message['content']

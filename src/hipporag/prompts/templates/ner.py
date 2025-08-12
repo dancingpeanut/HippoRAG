@@ -19,5 +19,11 @@ prompt_template = [
     {"role": "system", "content": ner_system},
     {"role": "user", "content": one_shot_ner_paragraph},
     {"role": "assistant", "content": one_shot_ner_output},
-    {"role": "user", "content": "${passage}"}
+    {"role": "user", "content": """
+#extend_prompt#
+
+现在从以下段落中提取实体，返回JSON字典。
+段落：
+${passage}
+    """.strip()}
 ]
