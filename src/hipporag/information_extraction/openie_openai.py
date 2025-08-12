@@ -95,7 +95,8 @@ class OpenIE:
                 edge_info = '"%s"' % '","'.join(
                     [f"{e['source'].strip()}-{e['name'].strip()}-{e['target'].strip()}" for e in self.graph_entity_config['relationships']])
                 extend_prompt += "\n\n提取的三元组必须是符合以下类型（subject-predicate-object）：" + edge_info
-            extend_prompt += "\n\n# 其他\n" + self.graph_entity_config.get('advanced_options', '').strip()
+            if self.graph_entity_config.get('advanced_options', '').strip():
+                extend_prompt += "\n\n# 其他\n" + self.graph_entity_config.get('advanced_options', '').strip()
             logger.info(f"Extend prompt: {extend_prompt}")
         else:
             extend_prompt = ''
