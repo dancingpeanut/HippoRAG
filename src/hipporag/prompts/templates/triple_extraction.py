@@ -4,9 +4,10 @@ from .ner import one_shot_ner_paragraph, one_shot_ner_output
 from ...utils.llm_utils import convert_format_to_template
 
 ner_conditioned_re_system = """你的任务是根据给定的段落和命名实体列表，构建一个RDF（资源描述框架）图。
-请以JSON列表的形式返回三元组，每个三元组代表RDF图中的一个关系，格式: {"triples": [["{subject}", "{predicate}", "{object}"]]}。
+请以JSON列表的形式返回三元组，每个三元组代表RDF图中的一个关系。
 
 请注意以下要求：
+- 三元组返回格式: {"triples": [["{subject}", "{predicate}", "{object}"]]}。
 - 每个三元组应包含至少一个，最好包含两个，来自每个段落命名实体列表中的实体。
 - 明确消解代词，确保指代清晰。
 - 三元组中实体和关系的顺序不重要。
@@ -17,11 +18,11 @@ ner_conditioned_re_system = """你的任务是根据给定的段落和命名实�
 """
 
 
-ner_conditioned_re_frame = """请将下列段落内容转换为一个JSON字典，包含三元组列表。
+ner_conditioned_re_frame = """请将下列段落内容转换为一个JSON字典，包含三元组列表，必须是遵循三元组返回格式。
 
 #extend_prompt#
 
-段落内容：
+段落：
 ```
 {passage}
 ```
@@ -35,7 +36,10 @@ def named_entity_to_string(named_entities):
     return json.dumps(named_entities, ensure_ascii=False)
 
 
-ner_conditioned_re_input = ner_conditioned_re_frame.format(passage=one_shot_ner_paragraph, named_entities=named_entity_to_string(json.loads(one_shot_ner_output)["named_entities"]))
+ner_conditioned_re_input = ner_conditioned_re_frame.format(
+    passage=one_shot_ner_paragraph,
+    named_entities=named_entity_to_string(json.loads(one_shot_ner_output)["named_entities"]).replace('#extend_prompt#', '')
+)
 
 
 ner_conditioned_re_output = """{"triples": [
