@@ -8,6 +8,7 @@ from pydantic import BaseModel
 from tqdm import tqdm
 
 from ..prompts import PromptTemplateManager
+from ..prompts.templates.triple_extraction import named_entity_to_string
 from ..utils.logging_utils import get_logger
 from ..utils.llm_utils import fix_broken_generated_json, filter_invalid_triples
 from ..utils.misc_utils import TripleRawOutput, NerRawOutput
@@ -144,7 +145,7 @@ class OpenIE:
         messages = self.prompt_template_manager.render(
             name='triple_extraction',
             passage=passage,
-            named_entity_json=json.dumps({"named_entities": named_entities})
+            named_entities=named_entity_to_string(named_entities)
         )
         self.extend_prompt(messages)
 

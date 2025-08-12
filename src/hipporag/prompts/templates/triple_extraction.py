@@ -1,3 +1,5 @@
+import json
+
 from .ner import one_shot_ner_paragraph, one_shot_ner_output
 from ...utils.llm_utils import convert_format_to_template
 
@@ -21,11 +23,16 @@ ner_conditioned_re_frame = """请将下列段落转换为一个JSON字典，包�
 {passage}
 ```
 
-{named_entity_json}
+命名实体列表：
+{named_entities}
 """
 
 
-ner_conditioned_re_input = ner_conditioned_re_frame.format(passage=one_shot_ner_paragraph, named_entity_json=one_shot_ner_output)
+def named_entity_to_string(named_entities):
+    return json.dumps(named_entities, ensure_ascii=False)
+
+
+ner_conditioned_re_input = ner_conditioned_re_frame.format(passage=one_shot_ner_paragraph, named_entities=named_entity_to_string(json.loads(one_shot_ner_output)["named_entities"]))
 
 
 ner_conditioned_re_output = """{"triples": [

@@ -51,7 +51,7 @@ class HippoRAGKM(HippoRAG):
         logging.info(f'Rerank facts, query: {query}, top_k_fact_indices: {top_k_fact_indices}, top_k_facts: {top_k_facts}')
 
         if len(top_k_facts) == 0:
-            logging.info('No facts found after reranking, searching documents. query: {query}')
+            logging.warning('No facts found after reranking, searching documents. query: {query}')
             sorted_doc_ids, sorted_doc_scores = self.dense_passage_retrieval(query)
         else:
             logging.info(f'Graph search, query: {query}')
