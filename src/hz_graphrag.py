@@ -160,7 +160,9 @@ class get_hipporag:
     def __exit__(self, exc_type, exc_value, traceback):
         # 在退出上下文时关闭文件
         if self.hipporag:
-            self.queue.put(self.hipporag)
+            hipporag = create_hipporag(ent_id=self.hipporag.ent_id, kl_id=self.hipporag.kl_id, env=self.params['env'],
+                                       graph_entity_config=self.params.get('graph_entity_config'))
+            self.queue.put(hipporag)
 
         # 返回 False 表示任何异常都不会被捕捉，直接向外传播
         return False
