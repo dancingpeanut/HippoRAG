@@ -152,7 +152,7 @@ class HippoRAG:
         self.openie_results_path = os.path.join(self.global_config.save_dir,f'openie_results_ner_{self.global_config.llm_name.replace("/", "_")}.json')
 
         # self.rerank_filter = DSPyFilter(self)
-        self.rerank_filter = VectorReranker(self)
+        # self.rerank_filter = VectorReranker(self)
 
         self.ready_to_retrieve = False
 
@@ -1516,7 +1516,7 @@ class HippoRAG:
         return ppr_sorted_doc_ids, ppr_sorted_doc_scores
 
 
-    def rerank_facts(self, query: str, sorted_query_fact_hash_ids: List[str]) -> Tuple[List[int], List[Tuple], dict]:
+    def rerank_facts(self, query: str, sorted_query_fact_hash_ids: List[str], model_name: str = None) -> Tuple[List[int], List[Tuple], dict]:
         """
 
         Args:
@@ -1552,10 +1552,14 @@ class HippoRAG:
         candidate_facts = [eval(fact_row_dict[id]['content']) for id in real_candidate_fact_ids]
 
         # Rerank the facts
-        top_k_fact_indices, top_k_facts, reranker_dict = self.rerank_filter(query,
-                                                                            candidate_facts,
-                                                                            [],
-                                                                            len_after_rerank=link_top_k)
+        if model_name:
+            rerank_filter = VectorReranker(self, model_name=model_name)
+            top_k_fact_indices, top_k_facts, reranker_dict = rerank_filter(query,
+                                                                                candidate_facts,
+                                                                                [],
+                                                                                len_after_rerank=link_top_k)
+        else:
+            top_k_fact_indices, top_k_facts, reranker_dict = [], candidate_facts, {'confidence': None}
 
         rerank_log = {'facts_before_rerank': candidate_facts, 'facts_after_rerank': top_k_facts}
 

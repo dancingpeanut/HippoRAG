@@ -1,7 +1,5 @@
 import json
 import difflib
-import logging
-import os
 from abc import ABC, abstractmethod
 
 import requests
@@ -149,9 +147,9 @@ class DSPyFilter(Reranker):
 
 class VectorReranker(Reranker):
 
-    def __init__(self, hipporag):
+    def __init__(self, hipporag, model_name: str = None):
         self.embedding_base_url = hipporag.global_config.embedding_base_url
-        self.model = hipporag.global_config.embedding_model_name
+        self.model = model_name
         self.top_k = hipporag.global_config.linking_top_k
 
     def __call__(self, *args, **kwargs):
@@ -159,9 +157,6 @@ class VectorReranker(Reranker):
 
     def rerank(self, query: str, candidate_items: List[Tuple], candidate_indices: List[int],
                len_after_rerank: int = None) -> Tuple[List[int], List[Tuple], dict]:
-        if int(os.environ.get('NO_RERANK_MODEL', '0')) != 0:
-            logging.info("NO_RERANK_MODEL is set, skipping reranking")
-            return [], candidate_items, {'confidence': None}
         docs = []
         item_map = {}
         for d in candidate_items:

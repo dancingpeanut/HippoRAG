@@ -39,7 +39,7 @@ class HippoRAGKM(HippoRAG):
         to_delete_hipporag_seg_ids = [db_seg_map[seg_id] for seg_id in to_delete_seg_ids]
         return to_add_seg_ids, to_delete_seg_ids, to_delete_hipporag_seg_ids
 
-    def graph_retrieve(self, query: str, num_to_retrieve: int = 5):
+    def graph_retrieve(self, query: str, num_to_retrieve: int = 5, rerank_model=None):
         if not self.ready_to_retrieve:
             self.prepare_retrieval_objects()
 
@@ -47,7 +47,7 @@ class HippoRAGKM(HippoRAG):
 
         sorted_fact_hash_ids, sorted_fact_scores = self.get_fact_scores(query)
         logging.info(f'Get facts, query: {query}, length: {len(sorted_fact_hash_ids)}')
-        top_k_fact_indices, top_k_facts, rerank_log = self.rerank_facts(query, sorted_fact_hash_ids)
+        top_k_fact_indices, top_k_facts, rerank_log = self.rerank_facts(query, sorted_fact_hash_ids, model_name=rerank_model)
         logging.info(f'Rerank facts, query: {query}, top_k_fact_indices: {top_k_fact_indices}, top_k_facts: {top_k_facts}')
 
         if len(top_k_facts) == 0:

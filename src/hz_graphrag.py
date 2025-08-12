@@ -329,10 +329,15 @@ async def search(request: Request):
             "kl_id": kl_info['kl_id'],
             "env": kl_info['env']
         }
+        if int(os.environ.get('NO_RERANK_MODEL', '0')) != 0:
+            logging.info("NO_RERANK_MODEL is set, skipping reranking")
+            rerank_model_name = None
+        else:
+            rerank_model_name = params.get('rerank_model')
         logging.info(f"开始检索：{kl_info}")
         with get_hipporag(hipporag_params) as hipporag:
             logging.info(f"获取到实例：{kl_info}")
-            res = hipporag.graph_retrieve(query=params['question'], num_to_retrieve=params.get('top_k', 5))
+            res = hipporag.graph_retrieve(query=params['question'], num_to_retrieve=params.get('top_k', 5), rerank_model=rerank_model_name)
             result.append(res)
     return {"content": result}
 
