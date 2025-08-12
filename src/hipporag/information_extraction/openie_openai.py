@@ -87,15 +87,15 @@ class OpenIE:
         last_message = messages[-1]
 
         if self.graph_entity_config:
-            extend_prompt = "提取要求：\n提取的实体类型必须是以下类型："
+            extend_prompt = "# 提取要求：\n提取的实体类型必须是以下类型："
             entity_info = '"%s"' % '","'.join(
                 [e['name'].strip() for e in self.graph_entity_config['entities']])
             extend_prompt += entity_info
             if not is_ner and self.graph_entity_config.get('relationships'):
                 edge_info = '"%s"' % '","'.join(
                     [f"{e['source'].strip()}-{e['name'].strip()}-{e['target'].strip()}" for e in self.graph_entity_config['relationships']])
-                extend_prompt += "\n提取的三元组必须是符合以下类型（subject-predicate-object）：" + edge_info
-            extend_prompt += "\n" + self.graph_entity_config.get('extend_prompt', '').strip()
+                extend_prompt += "\n\n提取的三元组必须是符合以下类型（subject-predicate-object）：" + edge_info
+            extend_prompt += "\n\n# 其他\n" + self.graph_entity_config.get('advanced_options', '').strip()
             logger.info(f"Extend prompt: {extend_prompt}")
         else:
             extend_prompt = ''

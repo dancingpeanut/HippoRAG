@@ -18,9 +18,9 @@ ner_conditioned_re_system = """你的任务是根据给定的段落和命名实�
 """
 
 
-ner_conditioned_re_frame = """请将下列段落内容转换为一个JSON字典，包含三元组列表，必须是遵循三元组返回格式。
+ner_conditioned_re_frame = """#extend_prompt#
 
-#extend_prompt#
+请将下列段落内容转换为一个JSON字典，包含三元组列表，必须是遵循三元组返回格式。
 
 段落：
 ```
