@@ -22,7 +22,8 @@ prompt_template = [
     {"role": "user", "content": """
 #extend_prompt#
 
-现在从以下段落中提取实体，返回JSON字典，是名称的数组，不用返回实体类型，格式{"named_entities": ["xx", "xx"]}。
+现在从下面段落中提取实体，返回JSON字典，是名称的数组，不用返回实体类型，格式{"named_entities": ["xx", "xx"]}。
+
 段落：
 ${passage}
     """.strip()}
