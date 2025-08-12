@@ -202,6 +202,8 @@ def update_task(data: dict):
     task_id = data['task_id']
     status = data['state']
     now_t = time.strftime('%Y-%m-%d %H:%M:%S')
+
+    # 更新任务表
     res = db_util.execute_sql("SELECT 1 FROM TASK WHERE task_id = ?", (task_id,))
     if not res:
         kl_id = data['kl_id']
@@ -211,6 +213,7 @@ def update_task(data: dict):
         sql = f"UPDATE TASK SET status = ?, data = ?, etime = ? WHERE task_id = ?"
         params = (status, json.dumps(data), now_t, task_id)
     db_util.execute_sql(sql, params)
+
     logging.info(f"更新任务状态完成：{data['state']}, {data['message']}")
 
 
@@ -226,6 +229,14 @@ def get_task(task_id: str):
 
 def put_task(task_type: TaskType, params: dict):
     task_id = uuid.uuid4().hex
+    kl_id = params['kl_id']
+    # 更新知识库信息表
+    res = db_util.execute_sql("SELECT 1 FROM KG WHERE kl_id = ?", (kl_id,))
+    if not res:
+        db_util.execute_sql(f"INSERT INTO KG(kl_id, env) VALUES (?, ?)", (kl_id, json.dumps(params['env'])))
+    else:
+        db_util.execute_sql(f"UPDATE KG SET env = ? WHERE kl_id = ?", (json.dumps(params['env']), kl_id))
+
     update_task({
         "task_id": task_id,
         "kl_id": params['kl_id'],

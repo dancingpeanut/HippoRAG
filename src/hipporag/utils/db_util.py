@@ -60,6 +60,13 @@ def initialize_db():
                 PRIMARY KEY (kl_id, seg_id)
             )
         ''')
+
+        c.execute('''
+            CREATE TABLE IF NOT EXISTS KG (
+                kl_id TEXTPRIMARY KEY,
+                env TEXT
+            )
+        ''')
         conn.commit()
         logging.info('initialize_db done')
 
