@@ -1,3 +1,4 @@
+from dataclasses import dataclass, asdict
 import glob
 import json
 import logging
@@ -64,6 +65,14 @@ class TaskType(Enum):
 TASK_RUNNING = "running"
 TASK_SUCCESS = "success"
 TASK_ERROR = "error"
+
+
+@dataclass
+class KGInfo:
+    kl_id: str
+    ent_id: str
+    user_id: str
+    env: dict
 
 
 DEFAULT_ENV = {
@@ -231,11 +240,12 @@ def put_task(task_type: TaskType, params: dict):
     task_id = uuid.uuid4().hex
     kl_id = params['kl_id']
     # 更新知识库信息表
+    kg_info = json.dumps(asdict(KGInfo(kl_id=kl_id, ent_id=params['ent_id'], user_id=params.get('user_id'), env=params['env'])))
     res = db_util.execute_sql("SELECT 1 FROM KG WHERE kl_id = ?", (kl_id,))
     if not res:
-        db_util.execute_sql(f"INSERT INTO KG(kl_id, env) VALUES (?, ?)", (kl_id, json.dumps(params['env'])))
+        db_util.execute_sql(f"INSERT INTO KG(kl_id, info) VALUES (?, ?)", (kl_id, kg_info))
     else:
-        db_util.execute_sql(f"UPDATE KG SET env = ? WHERE kl_id = ?", (json.dumps(params['env']), kl_id))
+        db_util.execute_sql(f"UPDATE KG SET info = ? WHERE kl_id = ?", (kg_info, kl_id))
 
     update_task({
         "task_id": task_id,
@@ -252,10 +262,17 @@ def put_task(task_type: TaskType, params: dict):
     return task_id
 
 
-@app.post("/controller/index/detail")
+@app.api_route("/controller/index/detail", methods=["GET", "POST"])
 async def detail(request: Request):
-    body = await request.body()
-    params = json.loads(body)
+    if request.method == "GET":
+        kl_id = request.query_params.get('kl_id')
+        rows = db_util.execute_sql("SELECT env FROM KG WHERE kl_id = ?", (kl_id,))
+        if rows:
+            env = json.loads(rows[0][0])
+    else:
+        body = await request.body()
+        params = json.loads(body)
+
     logging.info(f"获取详情：{params.get('kl_id')}")
     llm_name, embedding_name = get_kl_model_info(params['kl_id'], params['ent_id'])
     if llm_name is None:

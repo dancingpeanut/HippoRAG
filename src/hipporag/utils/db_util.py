@@ -64,7 +64,7 @@ def initialize_db():
         c.execute('''
             CREATE TABLE IF NOT EXISTS KG (
                 kl_id TEXTPRIMARY KEY,
-                env TEXT
+                info TEXT
             )
         ''')
         conn.commit()
