@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='hipporag',
-    version='0.1.1',
+    version="0.1.2",
     package_dir={"": "src"},
     packages=find_packages("src"),
     py_modules=["hz_graphrag"],  # 显式包含单独的模块

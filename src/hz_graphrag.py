@@ -6,6 +6,7 @@ import re
 import threading
 import time
 import traceback
+import uuid
 from copy import deepcopy
 from enum import Enum
 from contextlib import asynccontextmanager
@@ -58,6 +59,11 @@ app = FastAPI(lifespan=lifespan)
 class TaskType(Enum):
     CREATE = "create"
     UPDATE = "update"
+
+
+TASK_RUNNING = "running"
+TASK_SUCCESS = "success"
+TASK_ERROR = "error"
 
 
 DEFAULT_ENV = {
@@ -161,8 +167,8 @@ def parse_segments(segments: List[Dict]):
 def graph_run():
     while True:
         task = TASK_QUEUE.get()
+        task_id = task['task_id']
         params = task['params']
-        kl_id = params['kl_id']
         logging.info(f"接收到任务：{task['type']}, {params.get('kl_id')}, {params.get('env')}, {params.get('seg_ids')}")
         logging.info(f"当前任务队列：{TASK_QUEUE.qsize()}")
         with get_hipporag(params) as runner:
@@ -177,8 +183,8 @@ def graph_run():
                 else:
                     raise Exception("未知的任务类型")
                 update_task({
-                    "kl_id": kl_id,
-                    "state": "success",
+                    "task_id": task_id,
+                    "state": TASK_SUCCESS,
                     "message": ""
                 })
                 logging.info(f"任务执行完毕：{task['type']}, {params.get('kl_id')}")
@@ -186,30 +192,31 @@ def graph_run():
                 logging.error(f"任务执行失败：{task['type']}, {params.get('kl_id')}\n")
                 logging.error(traceback.format_exc())
                 update_task({
-                    "kl_id": kl_id,
-                    "state": "error",
+                    "task_id": task_id,
+                    "state": TASK_ERROR,
                     "message": str(e)
                 })
 
 
 def update_task(data: dict):
-    kl_id = data['kl_id']
+    task_id = data['task_id']
     status = data['state']
     now_t = time.strftime('%Y-%m-%d %H:%M:%S')
-    res = db_util.execute_sql("SELECT 1 FROM task_status WHERE kl_id = ?", (kl_id,))
+    res = db_util.execute_sql("SELECT 1 FROM TASK WHERE task_id = ?", (task_id,))
     if not res:
-        sql = f"INSERT INTO task_status(kl_id, status, data, ctime, etime) VALUES (?, ?, ?, ?, ?)"
-        params = (kl_id, status, json.dumps(data), now_t, None)
+        kl_id = data['kl_id']
+        sql = f"INSERT INTO TASK(task_id, kl_id, status, data, ctime, etime) VALUES (?, ?, ?, ?, ?, ?)"
+        params = (task_id, kl_id, status, json.dumps(data), now_t, None)
     else:
-        sql = f"UPDATE task_status SET status = ?, data = ?, etime = ? WHERE kl_id = ?"
-        params = (status, json.dumps(data), now_t, kl_id)
+        sql = f"UPDATE TASK SET status = ?, data = ?, etime = ? WHERE task_id = ?"
+        params = (status, json.dumps(data), now_t, task_id)
     db_util.execute_sql(sql, params)
     logging.info(f"更新任务状态完成：{data['state']}, {data['message']}")
 
 
-def get_task(kl_id: str):
-    sql = "SELECT status, data FROM task_status WHERE kl_id = ?"
-    rows = db_util.execute_sql(sql, (kl_id,))
+def get_task(task_id: str):
+    sql = "SELECT status, data FROM TASK WHERE task_id = ?"
+    rows = db_util.execute_sql(sql, (task_id,))
     if rows:
         data = rows[0][1]
         return json.loads(data)
@@ -218,16 +225,20 @@ def get_task(kl_id: str):
 
 
 def put_task(task_type: TaskType, params: dict):
+    task_id = uuid.uuid4().hex
     update_task({
+        "task_id": task_id,
         "kl_id": params['kl_id'],
-        "state": "running",
+        "state": TASK_RUNNING,
         "message": ""
     })
     TASK_QUEUE.put({
+        "task_id": task_id,
         'type': task_type,
         'params': params
     })
     logging.info(f"当前任务队列：{TASK_QUEUE.qsize()}")
+    return task_id
 
 
 @app.post("/controller/index/detail")
@@ -284,8 +295,8 @@ async def create(request: Request):
     body = await request.body()
     params = json.loads(body)
     logging.info(f"接收到创建任务：{params.get('kl_id')}, {params.get('env')}, {params.get('seg_ids')}")
-    put_task(TaskType.CREATE, params)
-    return {"id": 0}
+    task_id = put_task(TaskType.CREATE, params)
+    return {"task_id": task_id}
 
 
 @app.post("/controller/index/update")
@@ -293,13 +304,13 @@ async def update(request: Request):
     body = await request.body()
     params = json.loads(body)
     logging.info(f"接收到更新任务：{params.get('kl_id')}, {params.get('env')}, {params.get('seg_ids')}")
-    put_task(TaskType.UPDATE, params)
-    return {"id": 0}
+    task_id = put_task(TaskType.UPDATE, params)
+    return {"task_id": task_id}
 
 
 @app.get("/controller/index/state_2")
-async def state(kl_id: str = Query(...)):
-    return get_task(kl_id)
+async def state(task_id: str = Query(...)):
+    return get_task(task_id)
 
 
 @app.post("/controller/index/delete")
