@@ -94,7 +94,7 @@ class OpenIE:
             if not is_ner and self.graph_entity_config.get('relationships'):
                 edge_info = '"%s"' % '","'.join(
                     [f"{e['source'].strip()}-{e['name'].strip()}-{e['target'].strip()}" for e in self.graph_entity_config['relationships']])
-                extend_prompt += "\n提取的实体关系必须是以下类型：" + edge_info
+                extend_prompt += "\n提取的三元组必须是符合以下类型（subject-predicate-object）：" + edge_info
             extend_prompt += "\n" + self.graph_entity_config.get('extend_prompt', '').strip()
             logger.info(f"Extend prompt: {extend_prompt}")
             last_message['content'] = extend_prompt + "\n段落内容：\n" + last_message['content']
